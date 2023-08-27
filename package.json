@@ -1,0 +1,13 @@
+{
+  "name": "Julgame-firebase",
+  "version": "0.0.1",
+  "description": "firebase",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-modules main.js"
+  },
+  "dependencies": {
+    "firebase": "^10.3.0"
+  }
+}

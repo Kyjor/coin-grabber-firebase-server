@@ -78,6 +78,18 @@ const areAllPlayersReady = (players) => {
 const createRoom = (currentPlayers) => {
     // Your existing createRoom function goes here...
     const result = {};
+
+    // Create a new object with the same keys as mapBlockedSpaces
+    // We need to decide coin/player positions before creating result object
+    const blockedSpaces = {};
+    const coinSpaces = {};
+
+    for (const key in mapBlockedSpaces) {
+        blockedSpaces[key] = true;
+    }
+    setCoinSpaces(blockedSpaces, coinSpaces)
+    setPlayerPositions(blockedSpaces, currentPlayers)
+
     const currentPlayersDoubleNested = currentPlayers;
     // Loop through the top-level objects
     for (const key in currentPlayers) {
@@ -95,7 +107,7 @@ const createRoom = (currentPlayers) => {
         players: currentPlayers,
         gameState: {
             gameReady: false,
-            coins: []
+            coins: coinSpaces
         }
     }
     fetch(`${firebaseDatabaseURL}/games.json`, {
@@ -123,7 +135,6 @@ const createRoom = (currentPlayers) => {
             }
 
             const gameId = data.name
-            console.log(currentPlayers)
             fetch(`${firebaseDatabaseURL}/games/${gameId}/players.json`, {
                 method: "POST",
                 body: JSON.stringify(currentPlayers),
@@ -139,13 +150,13 @@ const createRoom = (currentPlayers) => {
             })
                 .then((data) => {
                     // Handle the response data
-                    console.log('Data updated:', data);
-                    console.log('Game id:', gameId);
+                    // console.log('Data updated:', data);
+                    // console.log('Game id:', gameId);
 
                     fetch(`${firebaseDatabaseURL}/games/${gameId}/players/${data.name}.json`, {
                         method: "Delete",
                     }).then((response) => {
-                        console.log(response)
+                        //console.log(response)
                         if (!response.ok) {
                             throw new Error('Network response was not ok');
                         }
@@ -172,7 +183,7 @@ const createRoom = (currentPlayers) => {
             })
                 .then((data) => {
                     // Handle the response data
-                    console.log('Data updated:', data);
+                    //console.log('Data updated:', data);
                 })
                 .catch((error) => {
                     // Handle errors
@@ -184,5 +195,69 @@ const createRoom = (currentPlayers) => {
             console.error("Error writing data:", error);
         });
 };
+
+const setCoinSpaces = (blockedSpaces, coinPositions) => {
+    for (let i = 0; i < 20; i++) {
+        const position = getRandomPosition(blockedSpaces);
+         // Add the selected position to the blocked spaces
+        blockedSpaces[position] = true;
+        coinPositions[position] = true;
+    }
+}
+
+const setPlayerPositions = (blockedSpaces, currentPlayers) => {
+    for (const key in currentPlayers) {
+        const position = getRandomPosition(blockedSpaces);
+        blockedSpaces[position] = true;
+        const [xStr, yStr] = position.split("x"); // Split the position string into x and y parts
+        const x = parseInt(xStr); // Convert the x part to an integer
+        const y = parseInt(yStr);
+        for (const innerKey in currentPlayers[key]) {
+            if (currentPlayers[key][innerKey].hasOwnProperty("x")) {
+                currentPlayers[key][innerKey].x = x;
+            }
+            if (currentPlayers[key][innerKey].hasOwnProperty("y")) {
+                currentPlayers[key][innerKey].y = y;
+            }
+        }
+    }
+}
+
+// This will give you a free position not in mapBlockedSpaces
+const getRandomPosition = (blockedSpaces) => {
+    let x, y, position;
+
+    do {
+        // Generate random x and y within the given constraints
+        x = Math.floor(Math.random() * (xPositionMaximum - xPositionMinimum + 1)) + xPositionMinimum;
+        y = Math.floor(Math.random() * (yPositionMaximum - yPositionMinimum + 1)) + yPositionMinimum;
+
+        // Create the position string
+        position = `${x}x${y}`;
+    } while (blockedSpaces[position]); // Repeat if the position is blocked
+
+    return position;
+}
+
+// Maxes and mins inclusive
+const xPositionMinimum = 1;
+const xPositionMaximum = 13;
+const yPositionMinimum = 4;
+const yPositionMaximum = 11;
+//CONST
+const mapBlockedSpaces = {
+    "1x11": true,
+    "4x7": true,
+    "5x7": true,
+    "6x7": true,
+    "7x4": true,
+    "7x9": true,
+    "8x6": true,
+    "8x9": true,
+    "9x6": true,
+    "9x9": true,
+    "10x6": true,
+    "12x10": true
+}
 
 checkPlayersAndCreateRoom();

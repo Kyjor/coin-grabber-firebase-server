@@ -28,6 +28,51 @@ const checkPlayersAndCreateRoom = async () => {
     }
 };
 
+//ADD LOGIC FOR LAST UPDATE 
+const monitorActiveGame = async (gameId) => {
+    while (true) {
+        try {
+            const response = await fetch(`${firebaseDatabaseURL}/games/${gameId}.json`);
+            const data = await response.json();
+            let isUpdated = false;
+
+            for (const playerId in data.players) {
+                if (data.players.hasOwnProperty(playerId)) {
+                  const player = data.players[playerId];
+                  
+                  console.log(player.position)
+                  if (data.gameState.coins[`${player.position.x}x${player.position.y}`]) {
+                    console.log(`Player named ${player.name} grabbed coin at position (${player.position.x},${player.position.y})`);
+                    delete data.gameState.coins[`${player.position.x}x${player.position.y}`];
+                    data.players[playerId].coins += 1;
+                    isUpdated = true;
+                  }
+                }
+            }
+
+            if (isUpdated) {
+                fetch(`${firebaseDatabaseURL}/games/${gameId}.json`, {
+                    method: "PUT",
+                    body: JSON.stringify(data),
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                }).then((response) => {
+                    if (!response.ok) {
+                        console.log(response)
+                        throw new Error('Network response was not ok');
+                    }
+                })
+            }
+
+            await delay(33); // Check player postions about 30 times a second
+        } catch (error) {
+            console.error("Error reading data:", error);
+            await delay(5000); // Wait for 1 second before retrying after an error
+        }
+    }
+};
+
 // Function to filter out objects where gameId is not "null"
 const filterPlayersByGameId = (players) => {
     const filteredData = {};
@@ -76,7 +121,6 @@ const areAllPlayersReady = (players) => {
 };
 
 const createRoom = (currentPlayers) => {
-    // Your existing createRoom function goes here...
     const result = {};
 
     // Create a new object with the same keys as mapBlockedSpaces
@@ -150,13 +194,9 @@ const createRoom = (currentPlayers) => {
             })
                 .then((data) => {
                     // Handle the response data
-                    // console.log('Data updated:', data);
-                    // console.log('Game id:', gameId);
-
                     fetch(`${firebaseDatabaseURL}/games/${gameId}/players/${data.name}.json`, {
                         method: "Delete",
                     }).then((response) => {
-                        //console.log(response)
                         if (!response.ok) {
                             throw new Error('Network response was not ok');
                         }
@@ -184,6 +224,8 @@ const createRoom = (currentPlayers) => {
                 .then((data) => {
                     // Handle the response data
                     //console.log('Data updated:', data);
+                    // Start monitoring game session
+                    monitorActiveGame(gameId);
                 })
                 .catch((error) => {
                     // Handle errors
@@ -213,11 +255,9 @@ const setPlayerPositions = (blockedSpaces, currentPlayers) => {
         const x = parseInt(xStr); // Convert the x part to an integer
         const y = parseInt(yStr);
         for (const innerKey in currentPlayers[key]) {
-            if (currentPlayers[key][innerKey].hasOwnProperty("x")) {
-                currentPlayers[key][innerKey].x = x;
-            }
-            if (currentPlayers[key][innerKey].hasOwnProperty("y")) {
-                currentPlayers[key][innerKey].y = y;
+            if (currentPlayers[key][innerKey].hasOwnProperty("position")) {
+                currentPlayers[key][innerKey].position.x = x;
+                currentPlayers[key][innerKey].position.y = y;
             }
         }
     }

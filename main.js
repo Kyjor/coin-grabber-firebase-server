@@ -5,32 +5,89 @@ const gamesPath = "games.json"; // Path to games data
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const checkPlayersAndCreateRoom = async () => {
+    let locallyTrackedLobbyPlayers = {}
     while (true) {
         try {
             const response = await fetch(`${firebaseDatabaseURL}/${playersPath}`);
             const data = await response.json();
             // Filter out objects where gameId is not "null"
-            const filteredData = filterPlayersByGameId(data);
-
-            if (areAllPlayersReady(filteredData)) {
-                createRoom(filteredData);
+            // Remove players that haven't sent a heartbeat in the last thirty seconds
+            removeInactiveLobbyPlayers(locallyTrackedLobbyPlayers, data);
+            //console.log(locallyTrackedLobbyPlayers)
+            // Filter out objects where gameId is not "null"
+            const filteredAndReadyData = filterPlayersByGameId(data);
+            //console.log(filteredAndReadyData)
+            
+            if (areAllPlayersReady(filteredAndReadyData)) {
+                createRoom(filteredAndReadyData);
                 //break; // Exit the loop once a room is created
-                await delay(10000);
+                await delay(30000);
             } else {
                 console.log("Not all players are ready. Waiting...");
             }
 
-            await delay(5000); // Wait for 1 second before checking again
+            await delay(10000); // Wait for 1 second before checking again
         } catch (error) {
             console.error("Error reading data:", error);
-            await delay(5000); // Wait for 1 second before retrying after an error
+            await delay(30000); // Wait for 1 second before retrying after an error
         }
     }
 };
 
+// Function to remove players that haven't sent a heartbeat within the last thirty seconds
+const removeInactiveLobbyPlayers = (locallyTrackedLobbyPlayers, originalData) => {
+    const currentTime = Date.now();
+    const thirtySecondsAgo = currentTime - 30 * 1000; // 30 seconds in milliseconds
+
+    for (const originalKey in originalData) {
+        if (!Object.hasOwnProperty.call(locallyTrackedLobbyPlayers, originalKey)) {
+            // If the key doesn't exist in locallyTrackedLobbyPlayers, add it
+            // with the current timestamp and heartbeat from originalData
+            locallyTrackedLobbyPlayers[originalKey] = {
+            timestamp: currentTime,
+            heartbeat: originalData[originalKey][Object.keys(originalData[originalKey])[0]].heartbeat,
+        };
+    } else {
+      // If the key exists, iterate through the inner keys to find the right one
+        for (const innerKey in originalData[originalKey]) {
+            if (Object.hasOwnProperty.call(originalData[originalKey], innerKey) && originalData[originalKey][innerKey].heartbeat > locallyTrackedLobbyPlayers[originalKey].heartbeat) {
+                // Update the timestamp and heartbeat
+                locallyTrackedLobbyPlayers[originalKey] = {
+                    timestamp: currentTime,
+                    heartbeat: originalData[originalKey][innerKey].heartbeat,
+                };
+                break; // Exit the inner loop once we've found the correct inner key
+            }
+        }
+      }
+
+        // Check if the player's timestamp is older than 30 seconds
+        if (
+            Object.hasOwnProperty.call(locallyTrackedLobbyPlayers, originalKey) &&
+            locallyTrackedLobbyPlayers[originalKey].timestamp < thirtySecondsAgo
+        ) {
+            // Remove the player from locallyTrackedLobbyPlayers
+            delete locallyTrackedLobbyPlayers[originalKey];
+            delete originalData[originalKey];
+            // Send a delete request to Firebase to remove the player's data
+            try {
+                fetch(`${firebaseDatabaseURL}/lobby/${originalKey}.json`, {
+                    method: "DELETE",
+                });
+                console.log(`Deleted player data for ${originalKey}`);
+            } catch (error) {
+                console.error(`Error deleting player data for ${originalKey}:`, error);
+            }
+        }
+        }
+  };
+  
+  
 //ADD LOGIC FOR LAST UPDATE 
 const monitorActiveGame = async (gameId) => {
-    while (true) {
+    const tickLimit = 600;
+    let totalTicks = 0;
+    while (totalTicks < tickLimit) {
         try {
             const response = await fetch(`${firebaseDatabaseURL}/games/${gameId}.json`);
             const data = await response.json();
@@ -40,12 +97,15 @@ const monitorActiveGame = async (gameId) => {
                 if (data.players.hasOwnProperty(playerId)) {
                   const player = data.players[playerId];
                   
-                  console.log(player.position)
-                  if (data.gameState.coins[`${player.position.x}x${player.position.y}`]) {
+                 // console.log(player.position)
+                  if (data.gameState.coins && data.gameState.coins[`${player.position.x}x${player.position.y}`]) {
                     console.log(`Player named ${player.name} grabbed coin at position (${player.position.x},${player.position.y})`);
                     delete data.gameState.coins[`${player.position.x}x${player.position.y}`];
                     data.players[playerId].coins += 1;
                     isUpdated = true;
+                  }
+                  else if (!data.gameState.coins) {
+                    // start a new round, spawn new coins
                   }
                 }
             }
@@ -65,10 +125,10 @@ const monitorActiveGame = async (gameId) => {
                 })
             }
 
-            await delay(33); // Check player postions about 30 times a second
+            totalTicks++;
+            await delay(200); // Check player postions on this delay
         } catch (error) {
             console.error("Error reading data:", error);
-            await delay(5000); // Wait for 1 second before retrying after an error
         }
     }
 };

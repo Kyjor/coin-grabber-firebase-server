@@ -87,11 +87,19 @@ const removeInactiveLobbyPlayers = (locallyTrackedLobbyPlayers, originalData) =>
 const monitorActiveGame = async (gameId) => {
     const tickLimit = 600;
     let totalTicks = 0;
+    let locallyTrackedPlayers = {}
+
     while (totalTicks < tickLimit) {
         try {
             const response = await fetch(`${firebaseDatabaseURL}/games/${gameId}.json`);
             const data = await response.json();
             let isUpdated = false;
+            removeInactiveGamePlayers(locallyTrackedPlayers, data.players, gameId);
+
+
+            if (Object.keys(data.players).length < 2) {
+                break;
+            }
 
             for (const playerId in data.players) {
                 if (data.players.hasOwnProperty(playerId)) {
@@ -131,7 +139,55 @@ const monitorActiveGame = async (gameId) => {
             console.error("Error reading data:", error);
         }
     }
+
+    // delete game
+    try {
+        fetch(`${firebaseDatabaseURL}/games/${gameId}.json`, {
+            method: "DELETE",
+        });
+        console.log(`Deleted game ${gameId}`);
+    } catch (error) {
+        console.error(`Error deleting game ${gameId}:`, error);
+    }
 };
+
+// Function to remove players that haven't sent a heartbeat within the last thirty seconds
+const removeInactiveGamePlayers = (locallyTrackedPlayers, players, gameId) => {
+    const currentTime = Date.now();
+    const thirtySecondsAgo = currentTime - 30 * 1000; // 30 seconds in milliseconds
+    const playerIds = Object.keys(players ?? []);
+    if (playerIds.length == 0) return;
+    
+    playerIds.forEach((playerId) => {
+        if (!Object.hasOwnProperty.call(locallyTrackedPlayers, playerId) || (Object.hasOwnProperty.call(locallyTrackedPlayers, playerId) && players[playerId].heartbeat > locallyTrackedPlayers[playerId].heartbeat)) {
+            // If the key doesn't exist in locallyTrackedPlayers, add it
+            // with the current timestamp and heartbeat from originalData
+            locallyTrackedPlayers[playerId] = {
+                timestamp: currentTime,
+                heartbeat: players[playerId].heartbeat,
+            };
+        } 
+
+        // Check if the player's timestamp is older than 30 seconds
+        if (
+            Object.hasOwnProperty.call(locallyTrackedPlayers, playerId) &&
+            locallyTrackedPlayers[playerId].timestamp < thirtySecondsAgo
+        ) {
+            // Remove the player from locallyTrackedPlayers
+            delete locallyTrackedPlayers[playerId];
+            delete players[playerId];
+            // Send a delete request to Firebase to remove the player's data
+            try {
+                fetch(`${firebaseDatabaseURL}/games/${gameId}/players/${playerId}.json`, {
+                    method: "DELETE",
+                });
+                console.log(`Deleted player data for ${playerId}`);
+            } catch (error) {
+                console.error(`Error deleting player data for ${playerId}:`, error);
+            }
+        }
+    });
+  };
 
 // Function to filter out objects where gameId is not "null"
 const filterPlayersByGameId = (players) => {
@@ -211,7 +267,8 @@ const createRoom = (currentPlayers) => {
         players: currentPlayers,
         gameState: {
             gameReady: false,
-            coins: coinSpaces
+            coins: coinSpaces,
+            gameOver: false
         }
     }
     fetch(`${firebaseDatabaseURL}/games.json`, {

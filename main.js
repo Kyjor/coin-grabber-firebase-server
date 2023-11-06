@@ -85,9 +85,15 @@ const removeInactiveLobbyPlayers = (locallyTrackedLobbyPlayers, originalData) =>
   
 //ADD LOGIC FOR LAST UPDATE 
 const monitorActiveGame = async (gameId) => {
-    const tickLimit = 600;
+    const tickLimit = 1200;
     let totalTicks = 0;
     let locallyTrackedPlayers = {}
+    const blockedSpaces = {};
+    const coinSpaces = {};
+
+    for (const key in mapBlockedSpaces) {
+        blockedSpaces[key] = true;
+    }
 
     while (totalTicks < tickLimit) {
         try {
@@ -106,14 +112,16 @@ const monitorActiveGame = async (gameId) => {
                   const player = data.players[playerId];
                   
                  // console.log(player.position)
-                  if (data.gameState.coins && data.gameState.coins[`${player.position.x}x${player.position.y}`]) {
-                    console.log(`Player named ${player.name} grabbed coin at position (${player.position.x},${player.position.y})`);
+                  if (data.gameState.coins && player && player.position && data.gameState.coins[`${player.position.x}x${player.position.y}`]) {
+                    //console.log(`Player named ${player.name} grabbed coin at position (${player.position.x},${player.position.y})`);
                     delete data.gameState.coins[`${player.position.x}x${player.position.y}`];
                     data.players[playerId].coins += 1;
                     isUpdated = true;
                   }
                   else if (!data.gameState.coins) {
                     // start a new round, spawn new coins
+                    createNewRound(blockedSpaces, coinSpaces, data)
+                    isUpdated = true;
                   }
                 }
             }
@@ -134,7 +142,7 @@ const monitorActiveGame = async (gameId) => {
             }
 
             totalTicks++;
-            await delay(200); // Check player postions on this delay
+            await delay(150); // Check player postions on this delay
         } catch (error) {
             console.error("Error reading data:", error);
         }
@@ -268,7 +276,7 @@ const createRoom = (currentPlayers) => {
         gameState: {
             gameReady: false,
             coins: coinSpaces,
-            gameOver: false
+            roundNumber: 1
         }
     }
     fetch(`${firebaseDatabaseURL}/games.json`, {
@@ -378,6 +386,31 @@ const setPlayerPositions = (blockedSpaces, currentPlayers) => {
             }
         }
     }
+}
+
+const createNewRound = (blockedSpaces, coinPositions, data) => {
+    data.gameState.roundNumber += 1;
+
+    for (let i = 0; i < 20; i++) {
+        const position = getRandomPosition(blockedSpaces);
+         // Add the selected position to the blocked spaces
+        blockedSpaces[position] = true;
+        coinPositions[position] = true;
+    }
+
+    for (const key in data.players) {
+        const position = getRandomPosition(blockedSpaces);
+        blockedSpaces[position] = true;
+        const [xStr, yStr] = position.split("x"); // Split the position string into x and y parts
+        const x = parseInt(xStr); // Convert the x part to an integer
+        const y = parseInt(yStr);
+      
+        if (data.players[key].hasOwnProperty("position")) {
+            data.players[key].position.x = x;
+            data.players[key].position.y = y;
+        }
+    }
+    data.gameState.coins = coinPositions;
 }
 
 // This will give you a free position not in mapBlockedSpaces

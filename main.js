@@ -5,6 +5,7 @@ const gamesPath = "games.json"; // Path to games data
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const checkPlayersAndCreateRoom = async () => {
+    let loops = 1;
     let locallyTrackedLobbyPlayers = {}
     while (true) {
         try {
@@ -21,12 +22,13 @@ const checkPlayersAndCreateRoom = async () => {
             if (areAllPlayersReady(filteredAndReadyData)) {
                 createRoom(filteredAndReadyData);
                 //break; // Exit the loop once a room is created
-                await delay(30000);
+                await delay(1000);
             } else {
-                console.log("Not all players are ready. Waiting...");
+                console.log("Not all players are ready. Waiting..." + ` (${loops})`);
             }
 
-            await delay(10000); // Wait for 1 second before checking again
+            await delay(30000); // Wait for 1 second before checking again
+            loops++;
         } catch (error) {
             console.error("Error reading data:", error);
             await delay(30000); // Wait for 1 second before retrying after an error
@@ -85,6 +87,8 @@ const removeInactiveLobbyPlayers = (locallyTrackedLobbyPlayers, originalData) =>
   
 //ADD LOGIC FOR LAST UPDATE 
 const monitorActiveGame = async (gameId) => {
+    let roundNumber = 1;
+    const roundLimit = 5;
     const tickLimit = 1200;
     let totalTicks = 0;
     let locallyTrackedPlayers = {}
@@ -106,6 +110,10 @@ const monitorActiveGame = async (gameId) => {
             if (Object.keys(data.players).length < 2) {
                 break;
             }
+            if (!data.gameState.coins && roundNumber == roundLimit) {
+                console.log("gameOver")
+                break;
+            }
 
             for (const playerId in data.players) {
                 if (data.players.hasOwnProperty(playerId)) {
@@ -122,6 +130,7 @@ const monitorActiveGame = async (gameId) => {
                     // start a new round, spawn new coins
                     createNewRound(blockedSpaces, coinSpaces, data)
                     isUpdated = true;
+                    roundNumber++;
                   }
                 }
             }
@@ -149,6 +158,7 @@ const monitorActiveGame = async (gameId) => {
     }
 
     // delete game
+    await delay(1000)
     try {
         fetch(`${firebaseDatabaseURL}/games/${gameId}.json`, {
             method: "DELETE",
